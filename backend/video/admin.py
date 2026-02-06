@@ -28,7 +28,7 @@ class VideoProjectAdmin(admin.ModelAdmin):
     list_filter = ['status', 'created_at', 'transcription_provider', 'llm_provider', 'image_provider']
     search_fields = ['title', 'description']
     readonly_fields = [
-        'progress_message', 'error_message',
+        'status', 'progress_message', 'error_message',
         'transcript_data', 'visual_prompts_data', 'visuals_data',
         'output_video', 'props_file',
         'created_at', 'updated_at', 'completed_at',
