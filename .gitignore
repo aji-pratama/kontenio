@@ -1,7 +1,38 @@
+# Node
 node_modules
 dist
+out
+
+# System
 .DS_Store
+
+# Environment
 .env
 
-# Ignore the output video from Git but not videos you import into src/.
-out
+# Python / Django
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.egg-info
+.eggs
+*.egg
+venv/
+.venv/
+backend/db.sqlite3
+backend/media/raw/*
+backend/media/assets/*
+backend/media/output/*
+!backend/media/raw/.gitkeep
+!backend/media/assets/.gitkeep
+!backend/media/output/.gitkeep
+
+# Remotion output
+out/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
