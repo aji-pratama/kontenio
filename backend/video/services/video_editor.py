@@ -60,14 +60,32 @@ class VideoEditorService:
 
             # Layout Switch
             if segment.layout_event == 'bottom_full':
+                # Full screen primary
                 seg_primary = primary_video.subclipped(start, end).resized(height=self.height).with_position('center')
                 clips.append(seg_primary.with_start(start))
+            
             elif segment.layout_event == 'top_full':
+                # Full screen secondary
                 seg_secondary = secondary_clip.resized(width=self.width).with_position('center')
                 clips.append(seg_secondary.with_start(start))
-            else: # Standard Split
-                seg_primary = primary_video.subclipped(start, end).resized(width=self.width).with_position(('center', 960))
+            
+            else: # Standard Split (50/50)
+                # Primary (Bottom) - Center Cropped to fit 1080x960
+                # We want the 'middle' of the source video, not the top ceiling.
+                # Assuming source is 9:16, we take the center 960px height.
+
+                # Check source dimensions to avoid errors
+                src_h = primary_video.h
+                crop_y_center = src_h / 2
+
+                # Create the bottom clip
+                seg_primary = (primary_video.subclipped(start, end)
+                               .cropped(width=self.width, height=960, x_center=self.width/2, y_center=crop_y_center)
+                               .with_position(('center', 960)))
+
+                # Secondary (Top)
                 seg_secondary = secondary_clip.resized(width=self.width).with_position(('center', 0))
+                
                 clips.append(seg_secondary.with_start(start))
                 clips.append(seg_primary.with_start(start))
 
@@ -76,39 +94,70 @@ class VideoEditorService:
                 text = segment.transcript.upper()
                 
                 try:
-                    # Subtitle Shadow (Timbul look)
-                    shadow_offset = 4
+                    # Typography Settings
+                    font_size = 42
+                    box_width = 840
+                    
+                    # Shadow Text (Timbul)
                     shadow_clip = TextClip(
                         text=text, 
-                        font_size=62, 
+                        font_size=font_size, 
                         color='black', 
-                        # font='Arial-Bold', # Fallback to default
                         method='caption', 
-                        size=(804, None)
-                    ).with_start(start).with_duration(duration).with_position(('center', 880 + shadow_offset)).with_opacity(0.5)
+                        size=(box_width, None),
+                        text_align='center'
+                    ).with_start(start).with_duration(duration).with_position(('center', 960 + 2)).with_opacity(0.6)
                     
                     # Main Text
                     txt_clip = TextClip(
                         text=text, 
-                        font_size=60, 
+                        font_size=font_size, 
                         color='white', 
-                        # font='Arial-Bold', 
+                        font='Helvetica-Bold', # Try a cleaner font if available, else default
                         method='caption', 
-                        size=(800, None)
-                    ).with_start(start).with_duration(duration).with_position(('center', 880))
+                        size=(box_width, None),
+                        text_align='center'
+                    ).with_start(start).with_duration(duration).with_position(('center', 960))
                     
                     subtitle_clips.extend([shadow_clip, txt_clip])
                 except Exception as e:
                     print(f"Warning: TextClip failed: {e}")
 
-        # 3. Static Glass Box Overlay (Apple Glass)
-        glass_box = ColorClip(size=(900, 220), color=(255, 255, 255)) \
+        # 3. Dynamic Glass Box Overlay (Apple Glass)
+        # Replaced static box with a cleaner look
+        # Box should be centered at the split line or where text is?
+        # Text is at ('center', 960) -> Middle of screen (split line).
+        # We want the box to cover the text area. 
+        # Let's make a box of height 300px centered at 960.
+        
+        box_h = 300
+        box_y = 960 - (box_h / 2)
+        
+        # Glass Background (White translucent)
+        glass_bg = ColorClip(size=(900, box_h), color=(255, 255, 255)) \
             .with_opacity(0.15) \
-            .with_position(('center', 860)) \
+            .with_position(('center', 960 - (box_h/2))) \
+            .with_duration(total_duration)
+
+        # Top Border (Thin White Line)
+        border_top = ColorClip(size=(900, 2), color=(255, 255, 255)) \
+            .with_opacity(0.6) \
+            .with_position(('center', box_y)) \
+            .with_duration(total_duration)
+            
+        # Bottom Border
+        border_bottom = ColorClip(size=(900, 2), color=(255, 255, 255)) \
+            .with_opacity(0.6) \
+            .with_position(('center', box_y + box_h)) \
             .with_duration(total_duration)
             
         # 4. Final Composition
-        final_video = CompositeVideoClip([background] + clips + [glass_box] + subtitle_clips)
+        # Order: Background -> Video/Images -> Glass Box -> Text
+        final_video = CompositeVideoClip(
+            [background] + clips + 
+            [glass_bg, border_top, border_bottom] + 
+            subtitle_clips
+        )
 
         # 5. Export
         final_video.write_videofile(
