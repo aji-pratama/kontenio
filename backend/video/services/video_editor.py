@@ -80,37 +80,25 @@ class VideoEditorService:
                 seg_secondary = secondary_clip.resized(width=self.width).with_position('center')
                 clips.append(seg_secondary.with_start(start))
             
-            else: # Standard Split (Card Style Aesthetic)
-                # Specs for "Floating Cards"
-                card_w, card_h, card_r = 1040, 920, 40
-                
-                # Primary (Bottom Card)
-                # 1. Resized to fit container width
+            else: # Standard Split (Full 50/50 - No Borders)
+                # Primary (Bottom)
                 seg_primary = primary_video.subclipped(start, end)
-                if seg_primary.w != self.width: 
-                    seg_primary = seg_primary.resized(width=self.width)
-                
-                # 2. Crop to Card Size
+                if seg_primary.w != self.width:
+                     seg_primary = seg_primary.resized(width=self.width)
+                     
                 seg_primary = seg_primary.cropped(
-                    width=card_w, height=card_h, 
-                    x_center=self.width/2, y_center=seg_primary.h/2
-                ).with_position(('center', 980)) # Just below center line
-                
-                # 3. Apply Rounded Mask
-                seg_primary = seg_primary.with_mask(create_rounded_mask((card_w, card_h), card_r))
+                    width=self.width, 
+                    height=960, 
+                    x_center=self.width/2, 
+                    y_center=seg_primary.h/2
+                ).with_position(('center', 960))
 
-                # Secondary (Top Card)
-                # 1. Resize
+                # Secondary (Top)
                 seg_secondary = secondary_clip.resized(width=self.width)
+                if seg_secondary.h > 960:
+                    seg_secondary = seg_secondary.cropped(width=self.width, height=960, x_center=self.width/2, y_center=seg_secondary.h/2)
                 
-                # 2. Crop to Card Size
-                seg_secondary = seg_secondary.cropped(
-                    width=card_w, height=card_h, 
-                    x_center=self.width/2, y_center=seg_secondary.h/2
-                ).with_position(('center', 20)) # Just above center line
-                
-                # 3. Apply Rounded Mask
-                seg_secondary = seg_secondary.with_mask(create_rounded_mask((card_w, card_h), card_r))
+                seg_secondary = seg_secondary.with_position(('center', 0))
                 
                 clips.append(seg_secondary.with_start(start))
                 clips.append(seg_primary.with_start(start))
