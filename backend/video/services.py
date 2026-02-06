@@ -126,12 +126,18 @@ class VideoProcessingService:
         shared_props_path = Path(settings.PROJECT_ROOT) / 'public' / 'media' / 'render_props.json'
         shutil.copy2(props_path, str(shared_props_path))
 
+        # 0. Cleanup port 9005 just in case
+        try:
+            subprocess.run(["fuser", "-k", "9005/tcp"], capture_output=True)
+        except:
+            pass
+
         # Remove explicit frame range to let Remotion calculate it automatically via calculateMetadata
         cmd = [
             "npx", "remotion", "render", "SplitScreen",
             str(output_path), f"--props={props_path}",
             "--concurrency=1", 
-            "--gl=angle", 
+            "--gl=swiftshader", # CPU based rendering, most compatible in Docker
             "--log=verbose",
             "--timeout=600000"
         ]

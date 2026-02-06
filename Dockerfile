@@ -14,6 +14,8 @@ RUN apt-get update && apt-get install -y \
     chromium \
     fonts-ipafont-gothic fonts-wqy-zenhei fonts-thai-tlwg fonts-kacst fonts-freefont-ttf fonts-liberation \
     procps \
+    psmisc \
+    xvfb \
     && rm -rf /var/lib/apt/lists/*
 
 # 2. Setup Working Directory
