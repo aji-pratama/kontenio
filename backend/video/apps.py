@@ -6,6 +6,5 @@ class VideoConfig(AppConfig):
     name = 'video'
 
     def ready(self):
-        from .utils import ensure_symlink, ensure_directories
+        from .utils import ensure_directories
         ensure_directories()
-        ensure_symlink()

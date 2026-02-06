@@ -17,11 +17,12 @@ help: ## Show this help
 build: ## Build or rebuild services
 	$(PODMAN) build
 
-up: ## Start all services (Web, Worker, Beat, Studio, DB, Redis)
+up: ## Start all services (Frontend, Web, Worker, Beat, DB, Redis)
 	$(PODMAN) up -d
 	@echo "🚀 Kontenio is UP!"
-	@echo "📺 Remotion Studio: http://localhost:3000"
+	@echo "🌐 Frontend:        http://localhost:5173"
 	@echo "🌐 Django Admin:    http://localhost:8001/admin"
+	@echo "📡 API Documentation: http://localhost:8001/api/docs"
 
 down: ## Stop and remove all services
 	$(PODMAN) down
@@ -41,8 +42,8 @@ logs-worker: ## Tail worker logs
 logs-beat: ## Tail beat logs
 	podman logs -f kontenio_beat
 
-logs-studio: ## Tail studio logs
-	podman logs -f kontenio_studio
+logs-frontend: ## Tail frontend logs
+	podman logs -f kontenio_frontend
 
 create-superuser: ## Create a Django admin superuser
 	podman exec -it $(WEB_CONTAINER) python3 backend/manage.py createsuperuser
@@ -50,6 +51,7 @@ create-superuser: ## Create a Django admin superuser
 # --- Database & Shell ---
 
 migrate-db: ## Run Django migrations inside container
+	podman exec -it $(WEB_CONTAINER) python3 backend/manage.py makemigrations
 	podman exec -it $(WEB_CONTAINER) python3 backend/manage.py migrate
 
 shell: ## Enter the web container shell
@@ -60,6 +62,9 @@ shell: ## Enter the web container shell
 c-video: ## Process video (Usage: make c-video INPUT=clip.mp4)
 	@if [ -z "$(INPUT)" ]; then echo "❌ Error: INPUT is required."; exit 1; fi
 	podman exec -it $(WEB_CONTAINER) python3 backend/manage.py make_video --input="$(INPUT)"
+
+render-video: ## Alias for c-video (Usage: make render-video INPUT=clip.mp4)
+	@$(MAKE) c-video INPUT="$(INPUT)"
 
 c-video-async: ## Process via Celery (Usage: make c-video-async INPUT=clip.mp4 MOCK=true)
 	@if [ -z "$(INPUT)" ]; then echo "❌ Error: INPUT is required."; exit 1; fi
@@ -76,3 +81,11 @@ clean: ## Remove temp files and caches
 	find . -type f -name "*.pyc" -delete
 	rm -rf out/*
 	@echo "✨ Cleaned up!"
+
+nuke: ## Force destroy all project containers and images
+	@echo "💥 Nuking environment..."
+	-$(PODMAN) down
+	-podman pod rm -f -a
+	-podman rm -f -a
+	-podman volume prune -f
+	@echo "💀 Clean state achieved. Run 'make build' to start fresh."

@@ -2,9 +2,18 @@ from django.contrib import admin, messages
 from django.utils.html import format_html
 from django.utils.safestring import mark_safe
 
-from .models import VideoProject, VisualAsset
-from .services import VideoProcessingService
+from .models import VideoProject, VisualAsset, VideoSegment, VideoTemplate
+from .services.processor import VideoProcessor
 
+@admin.register(VideoTemplate)
+class VideoTemplateAdmin(admin.ModelAdmin):
+    list_display = ['name', 'slug', 'created_at']
+    search_fields = ['name', 'slug']
+
+class VideoSegmentInline(admin.TabularInline):
+    model = VideoSegment
+    extra = 0
+    fields = ['order', 'start_time', 'end_time', 'transcript', 'layout_event', 'asset_file']
 
 class VisualAssetInline(admin.TabularInline):
     model = VisualAsset
@@ -24,8 +33,8 @@ class VisualAssetInline(admin.TabularInline):
 
 @admin.register(VideoProject)
 class VideoProjectAdmin(admin.ModelAdmin):
-    list_display = ['title', 'status_badge', 'providers_display', 'video_preview', 'created_at', 'actions_column']
-    list_filter = ['status', 'created_at', 'transcription_provider', 'llm_provider', 'image_provider']
+    list_display = ['title', 'status_badge', 'template', 'created_at', 'actions_column']
+    list_filter = ['status', 'template', 'created_at']
     search_fields = ['title', 'description']
     readonly_fields = [
         'status', 'progress_message', 'error_message',
@@ -35,16 +44,16 @@ class VideoProjectAdmin(admin.ModelAdmin):
         'video_player', 'output_player',
     ]
     fieldsets = (
-        ('Project Info', {'fields': ('title', 'description', 'raw_video', 'video_player')}),
+        ('Project Info', {'fields': ('title', 'template', 'description', 'raw_video', 'video_player')}),
         ('AI Providers', {'fields': ('transcription_provider', 'llm_provider', 'image_provider')}),
-        ('Options', {'fields': ('style_hint', 'skip_image_generation')}),
+        ('Options', {'fields': ('style_hint', 'skip_image_generation', 'global_style')}),
         ('Status', {'fields': ('status', 'progress_message', 'error_message')}),
         ('Data', {'fields': ('transcript_data', 'visual_prompts_data', 'visuals_data'), 'classes': ('collapse',)}),
         ('Output', {'fields': ('output_video', 'output_player', 'props_file')}),
         ('Timestamps', {'fields': ('created_at', 'updated_at', 'completed_at'), 'classes': ('collapse',)}),
     )
-    inlines = [VisualAssetInline]
-    actions = ['process_videos', 'process_videos_mock', 'retry_projects', 'generate_props_only']
+    inlines = [VideoSegmentInline, VisualAssetInline]
+    actions = ['process_videos', 'process_videos_mock', 'retry_projects', 'force_render']
 
     class Media:
         js = ('admin/js/project_refresh.js',)
@@ -136,38 +145,41 @@ class VideoProjectAdmin(admin.ModelAdmin):
         return mark_safe('<span style="color:#17a2b8; font-size:11px;">⏳ Processing</span>')
     actions_column.short_description = 'Actions'
 
-    @admin.action(description='🚀 Process (Async Celery)')
+    @admin.action(description='🚀 Process (Auto-detect Phase)')
     def process_videos(self, request, queryset):
         from .tasks import process_video_task
         count = 0
-        for project in queryset.filter(status__in=['pending', 'failed']):
+        for project in queryset.filter(status__in=['draft', 'ready', 'failed', 'pending']):
+            project.error_message = "" # Clear errors on retry
+            project.save()
             process_video_task.delay(project.id)
             count += 1
-        messages.success(request, f'✅ {count} projects submitted to Celery for background processing.')
+        messages.success(request, f'✅ {count} projects queued for processing.')
 
-    @admin.action(description='🧪 Process (Mock Async)')
+    @admin.action(description='🧪 Process Mock (Force Phase 1)')
     def process_videos_mock(self, request, queryset):
         from .tasks import process_video_task
         count = 0
-        for project in queryset.filter(status__in=['pending', 'failed']):
+        for project in queryset.filter(status__in=['draft', 'failed', 'pending']):
             # Force mock providers and SAVE to DB
             project.transcription_provider = 'mock'
             project.llm_provider = 'mock'
             project.image_provider = 'mock'
+            project.error_message = ""
             project.save() 
             
             process_video_task.delay(project.id)
             count += 1
-        messages.success(request, f'✅ {count} projects submitted to Celery (Mock mode).')
+        messages.success(request, f'✅ {count} projects submitted for Mock Analysis.')
 
-    @admin.action(description='📝 Props only')
-    def generate_props_only(self, request, queryset):
-        for project in queryset:
-            service = VideoProcessingService(project)
-            if service.generate_props_only():
-                messages.success(request, f'✅ Props for {project.title}')
-            else:
-                messages.error(request, f'❌ {project.title}: {project.error_message}')
+    @admin.action(description='⏩ Force Render (Ready -> Complete)')
+    def force_render(self, request, queryset):
+        from .tasks import process_video_task
+        count = 0
+        for project in queryset.filter(status='ready'):
+             process_video_task.delay(project.id)
+             count += 1
+        messages.success(request, f'✅ {count} projects queued for rendering.')
 
 
 @admin.register(VisualAsset)

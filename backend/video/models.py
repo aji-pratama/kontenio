@@ -1,17 +1,31 @@
 import os
 from pathlib import Path
-
 from django.conf import settings
 from django.db import models
 from django.utils import timezone
 
+class VideoTemplate(models.Model):
+    name = models.CharField(max_length=255)
+    slug = models.SlugField(unique=True)
+    description = models.TextField(blank=True)
+    preview_image = models.ImageField(upload_to='templates/', null=True, blank=True)
+    
+    # Visual Configuration (JSON for flexibility)
+    config = models.JSONField(
+        default=dict,
+        help_text="Configuration for colors, fonts, layout preferences, etc."
+    )
+    
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return self.name
 
 class VideoProject(models.Model):
     STATUS_CHOICES = (
-        ('pending', 'Pending'),
-        ('transcribing', 'Transcribing'),
-        ('mapping', 'Mapping Visuals'),
-        ('generating', 'Generating Images'),
+        ('draft', 'Draft'),
+        ('analyzing', 'Analyzing'),
+        ('ready', 'Ready to Edit'),
         ('rendering', 'Rendering Video'),
         ('completed', 'Completed'),
         ('failed', 'Failed'),
@@ -39,9 +53,27 @@ class VideoProject(models.Model):
         ('mock', 'Mock (Testing)'),
     )
 
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL, 
+        on_delete=models.CASCADE, 
+        null=True, blank=True
+    )
+    template = models.ForeignKey(
+        VideoTemplate,
+        on_delete=models.SET_NULL,
+        null=True, blank=True,
+        related_name='projects'
+    )
     title = models.CharField(max_length=255)
     description = models.TextField(blank=True)
     raw_video = models.FileField(upload_to='raw/')
+    processed_video_1080p = models.FileField(upload_to='optimized/', null=True, blank=True)
+
+    global_style = models.CharField(
+        max_length=100,
+        default='modern',
+        help_text="e.g. 3D Tactile, Flat Minimalist, Cyberpunk"
+    )
 
     style_hint = models.CharField(
         max_length=255,
@@ -67,7 +99,7 @@ class VideoProject(models.Model):
     status = models.CharField(
         max_length=20,
         choices=STATUS_CHOICES,
-        default='pending'
+        default='draft'
     )
     progress_message = models.TextField(blank=True)
     error_message = models.TextField(blank=True)
@@ -115,8 +147,68 @@ class VideoProject(models.Model):
         self.error_message = error_message
         self.save()
 
+class VideoSegment(models.Model):
+    ASSET_TYPE_CHOICES = (
+        ('ai_image', 'AI Generated Image'),
+        ('user_upload', 'User Uploaded Asset'),
+        ('video_clip', 'Video Clip'),
+        ('meme', 'Meme'),
+        ('emoji', 'Emoji'),
+    )
+
+    LAYOUT_CHOICES = (
+        ('split', 'Standard Split (50/50)'),
+        ('bottom_full', 'Focus Bottom (Fullscreen)'),
+        ('top_full', 'Focus Top (Fullscreen)'),
+    )
+
+    ANIMATION_CHOICES = (
+        ('ken_burns', 'Ken Burns (Slow Zoom)'),
+        ('side_slide', 'Side Slide'),
+        ('static', 'Static'),
+    )
+
+    project = models.ForeignKey(
+        VideoProject,
+        on_delete=models.CASCADE,
+        related_name='segments'
+    )
+    order = models.PositiveIntegerField(default=0)
+    start_time = models.FloatField()
+    end_time = models.FloatField()
+    transcript = models.TextField(blank=True)
+    
+    asset_type = models.CharField(
+        max_length=20,
+        choices=ASSET_TYPE_CHOICES,
+        default='ai_image'
+    )
+    asset_file = models.FileField(upload_to='assets/', null=True, blank=True)
+    
+    layout_event = models.CharField(
+        max_length=20,
+        choices=LAYOUT_CHOICES,
+        default='split'
+    )
+    animation_type = models.CharField(
+        max_length=20,
+        choices=ANIMATION_CHOICES,
+        default='ken_burns'
+    )
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['order', 'start_time']
+        verbose_name = 'Video Segment'
+        verbose_name_plural = 'Video Segments'
+
+    def __str__(self):
+        return f"Segment {self.order} [{self.start_time}s - {self.end_time}s] for {self.project.title}"
 
 class VisualAsset(models.Model):
+    # Legacy data support
     project = models.ForeignKey(
         VideoProject,
         on_delete=models.CASCADE,

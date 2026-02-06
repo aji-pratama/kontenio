@@ -5,19 +5,8 @@ from typing import Any, Callable, Dict, List, Optional
 
 from django.conf import settings
 
-from .providers import ProviderFactory
-from .providers.base import GeneratedImage, TranscriptSegment, VisualPrompt
-
-try:
-    from .providers.openai_provider import OPENAI_AVAILABLE
-except ImportError:
-    OPENAI_AVAILABLE = False
-
-try:
-    from .providers.gemini_provider import GEMINI_AVAILABLE
-except ImportError:
-    GEMINI_AVAILABLE = False
-
+from ..providers import ProviderFactory
+from ..providers.base import GeneratedImage, TranscriptSegment, VisualPrompt
 
 class TranscriptionService:
     def __init__(self, provider: str = "openai_whisper", model_name: str = "base"):
@@ -27,7 +16,7 @@ class TranscriptionService:
 
     def _get_provider(self):
         if self.provider_type == "local_whisper":
-            from .providers.whisper_provider import LocalWhisperProvider
+            from ..providers.whisper_provider import LocalWhisperProvider
             return LocalWhisperProvider(model_name=self.model_name)
         return self._factory.get_transcription_provider(self.provider_type)
 
@@ -55,7 +44,7 @@ class TranscriptionService:
         audio_path = self.extract_audio(video_path)
         try:
             if not use_api and self.provider_type == "openai_whisper":
-                from .providers.whisper_provider import LocalWhisperProvider
+                from ..providers.whisper_provider import LocalWhisperProvider
                 provider = LocalWhisperProvider(model_name=self.model_name)
             else:
                 provider = self._get_provider()
@@ -118,31 +107,3 @@ class ImageGenerationService:
         ]
         results = provider.generate_batch(prompt_objects, output_dir, progress_callback)
         return [r.to_visual_dict() for r in results]
-
-
-class AIServices:
-    def __init__(
-        self,
-        transcription_provider: str = "openai_whisper",
-        llm_provider: str = "openai_gpt4",
-        image_provider: str = "dalle3"
-    ):
-        self.transcription = TranscriptionService(provider=transcription_provider)
-        self.visual_mapping = VisualMappingService(provider=llm_provider)
-        self.image_generation = ImageGenerationService(provider=image_provider)
-
-    @classmethod
-    def with_openai(cls) -> "AIServices":
-        return cls(
-            transcription_provider="openai_whisper",
-            llm_provider="openai_gpt4",
-            image_provider="dalle3"
-        )
-
-    @classmethod
-    def with_gemini(cls) -> "AIServices":
-        return cls(
-            transcription_provider="gemini",
-            llm_provider="gemini_flash",
-            image_provider="imagen"
-        )

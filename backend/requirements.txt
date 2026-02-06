@@ -19,6 +19,13 @@ google-genai>=1.0.0
 # Image handling
 Pillow>=10.0.0
 
+# API
+django-ninja>=1.1.0
+django-cors-headers>=4.3.0
+
+# Video Rendering
+moviepy>=1.0.3
+
 # Whisper for local transcription (optional)
 # Note: This requires significant disk space (~3GB for base model)
 # Uncomment to use local Whisper instead of API
