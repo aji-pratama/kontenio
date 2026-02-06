@@ -44,7 +44,24 @@ class VideoProjectAdmin(admin.ModelAdmin):
         ('Timestamps', {'fields': ('created_at', 'updated_at', 'completed_at'), 'classes': ('collapse',)}),
     )
     inlines = [VisualAssetInline]
-    actions = ['process_videos', 'process_videos_mock', 'generate_props_only']
+    actions = ['process_videos', 'process_videos_mock', 'retry_projects', 'generate_props_only']
+
+    class Media:
+        js = ('admin/js/project_refresh.js',)
+
+    def changelist_view(self, request, extra_context=None):
+        # Auto-refresh if any project is in a processing state
+        processing_exists = VideoProject.objects.filter(
+            status__in=['transcribing', 'mapping', 'generating', 'rendering']
+        ).exists()
+        extra_context = extra_context or {}
+        extra_context['processing_active'] = processing_exists
+        return super().changelist_view(request, extra_context=extra_context)
+
+    @admin.action(description='🔄 Retry Selected (Set to Pending)')
+    def retry_projects(self, request, queryset):
+        count = queryset.update(status='pending', error_message='', progress_message='Retrying...')
+        messages.success(request, f'✅ {count} projects reset to Pending. Celery Beat will pick them up shortly.')
 
     def providers_display(self, obj):
         return format_html(
@@ -119,17 +136,19 @@ class VideoProjectAdmin(admin.ModelAdmin):
         return mark_safe('<span style="color:#17a2b8; font-size:11px;">⏳ Processing</span>')
     actions_column.short_description = 'Actions'
 
-    @admin.action(description='🚀 Process (Production)')
+    @admin.action(description='🚀 Process (Async Celery)')
     def process_videos(self, request, queryset):
+        from .tasks import process_video_task
+        count = 0
         for project in queryset.filter(status__in=['pending', 'failed']):
-            service = VideoProcessingService(project)
-            if service.process():
-                messages.success(request, f'✅ {project.title} done!')
-            else:
-                messages.error(request, f'❌ {project.title}: {project.error_message}')
+            process_video_task.delay(project.id)
+            count += 1
+        messages.success(request, f'✅ {count} projects submitted to Celery for background processing.')
 
-    @admin.action(description='🧪 Process (Mock)')
+    @admin.action(description='🧪 Process (Mock Async)')
     def process_videos_mock(self, request, queryset):
+        from .tasks import process_video_task
+        count = 0
         for project in queryset.filter(status__in=['pending', 'failed']):
             # Force mock providers and SAVE to DB
             project.transcription_provider = 'mock'
@@ -137,11 +156,9 @@ class VideoProjectAdmin(admin.ModelAdmin):
             project.image_provider = 'mock'
             project.save() 
             
-            service = VideoProcessingService(project)
-            if service.process():
-                messages.success(request, f'✅ {project.title} done (mock)!')
-            else:
-                messages.error(request, f'❌ {project.title}: {project.error_message}')
+            process_video_task.delay(project.id)
+            count += 1
+        messages.success(request, f'✅ {count} projects submitted to Celery (Mock mode).')
 
     @admin.action(description='📝 Props only')
     def generate_props_only(self, request, queryset):

@@ -1,7 +1,7 @@
 # AI Video Factory - Centralized Control Center
 # ============================================
 
-.PHONY: help build up down restart status logs migrate-db shell c-video c-video-async c-test clean
+.PHONY: help build up down restart status logs logs-worker logs-beat logs-flower logs-studio migrate-db shell c-video c-video-async c-test clean create-superuser
 
 # Configuration
 SHELL := /bin/bash
@@ -17,11 +17,12 @@ help: ## Show this help
 build: ## Build or rebuild services
 	$(PODMAN) build
 
-up: ## Start all services (Web, Worker, Studio, DB, Redis)
+up: ## Start all services (Web, Worker, Beat, Flower, Studio, DB, Redis)
 	$(PODMAN) up -d
 	@echo "🚀 Kontenio is UP!"
 	@echo "📺 Remotion Studio: http://localhost:3000"
 	@echo "🌐 Django Admin:    http://localhost:8001/admin"
+	@echo "🌸 Flower Dash:    http://localhost:5555"
 
 down: ## Stop and remove all services
 	$(PODMAN) down
@@ -32,8 +33,23 @@ restart: ## Restart all services
 status: ## Check service status
 	$(PODMAN) ps
 
-logs: ## Tail logs for all services
-	$(PODMAN) logs -f
+logs: ## Tail web logs
+	podman logs -f kontenio_web
+
+logs-worker: ## Tail worker logs
+	podman logs -f kontenio_worker
+
+logs-beat: ## Tail beat logs
+	podman logs -f kontenio_beat
+
+logs-flower: ## Tail flower logs
+	podman logs -f kontenio_flower
+
+logs-studio: ## Tail studio logs
+	podman logs -f kontenio_studio
+
+create-superuser: ## Create a Django admin superuser
+	podman exec -it $(WEB_CONTAINER) python3 backend/manage.py createsuperuser
 
 # --- Database & Shell ---
 

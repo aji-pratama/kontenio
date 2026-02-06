@@ -101,29 +101,49 @@ def generate_render_props(
         'transcript': transcript,
         'visuals': visuals_http,
     }
-    Path(output_path).parent.mkdir(parents=True, exist_ok=True)
+    parent_dir = Path(output_path).parent
+    # os.path.isdir returns False for broken symlinks, which is what we want
+    if not os.path.isdir(str(parent_dir)):
+        parent_dir.mkdir(parents=True, exist_ok=True)
     with open(output_path, 'w') as f:
         json.dump(props, f, indent=2)
     return output_path
 
 
 def ensure_symlink():
+    """Best effort symlink to allow Remotion access to media if needed."""
     project_root = Path(settings.PROJECT_ROOT)
     public_media = project_root / 'public' / 'media'
-    backend_media = Path(settings.MEDIA_ROOT)
+    # Target path INSIDE the container
+    backend_media_in_container = "/app/backend/media"
+    
+    # Check if the path exists (could be a broken symlink)
+    if os.path.lexists(str(public_media)):
+        # If it's a symlink, check where it points
+        if os.path.islink(str(public_media)):
+            target = os.readlink(str(public_media))
+            # If it points to a host path (e.g. /Users/...) or is simply wrong, remove it
+            if target.startswith('/Users/') or target != backend_media_in_container:
+                try:
+                    os.unlink(str(public_media))
+                except Exception:
+                    pass
+            else:
+                # Already points to the correct container path
+                return
+        else:
+            # It's a real directory or file, but we want a symlink. 
+            # Leave it if it has content, but usually we want to replace it.
+            # For safety, let's just return if it's a real dir to avoid data loss.
+            if os.path.isdir(str(public_media)):
+                return
+            os.remove(str(public_media))
 
-    if public_media.exists():
-        if public_media.is_symlink():
-            return
-        # If it's a directory but not a symlink, back it up
-        try:
-            public_media.rename(public_media.with_suffix('.bak'))
-        except Exception:
-            pass
-
-    public_media.parent.mkdir(parents=True, exist_ok=True)
     try:
-        public_media.symlink_to(backend_media)
-    except Exception:
-        # Fallback if symlink fails (e.g. permission or OS issue)
-        pass
+        public_media.parent.mkdir(parents=True, exist_ok=True)
+        # Use absolute container path for the symlink target
+        os.symlink(backend_media_in_container, str(public_media))
+        print(f"✅ Created symlink: {public_media} -> {backend_media_in_container}")
+    except Exception as e:
+        if not isinstance(e, FileExistsError):
+             print(f"⚠️ Symlink warning: {e}")

@@ -1,4 +1,4 @@
-import subprocess, os
+import subprocess, os, shutil
 from pathlib import Path
 
 from django.conf import settings
@@ -9,7 +9,7 @@ from .ai_services import (
     TranscriptionService,
     VisualMappingService,
 )
-from .utils import ensure_symlink, generate_render_props, get_media_paths, get_video_metadata
+from .utils import generate_render_props, get_media_paths, get_video_metadata
 
 
 class VideoProcessingService:
@@ -93,7 +93,6 @@ class VideoProcessingService:
 
     def _generate_props(self):
         self.project.update_status('rendering', 'Preparing render...')
-        ensure_symlink()
 
         props_filename = f"props_project_{self.project.id}.json"
         props_path = Path(settings.MEDIA_ROOT) / 'props' / props_filename
@@ -125,7 +124,6 @@ class VideoProcessingService:
         
         # Ensure the shared public path is also updated for local dev visibility
         shared_props_path = Path(settings.PROJECT_ROOT) / 'public' / 'media' / 'render_props.json'
-        import shutil
         shutil.copy2(props_path, str(shared_props_path))
 
         # Remove explicit frame range to let Remotion calculate it automatically via calculateMetadata

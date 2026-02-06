@@ -31,3 +31,17 @@ def process_video_task(self, project_id):
         logger.exception(f"Unexpected error in process_video_task for project {project_id}")
         # Retry logic could be added here
         raise self.retry(exc=e, countdown=60)
+
+@shared_task
+def auto_process_pending_projects():
+    """
+    Periodic task to automatically pick up 'pending' projects.
+    """
+    pending_projects = VideoProject.objects.filter(status='pending')
+    count = pending_projects.count()
+    if count > 0:
+        logger.info(f"Auto-picking {count} pending projects...")
+        for project in pending_projects:
+            # We use delay() to process each one in its own worker thread
+            process_video_task.delay(project.id)
+    return f"Processed {count} projects"
