@@ -1,10 +1,25 @@
 import os
 import random
+import numpy as np
 from pathlib import Path
 from typing import Any, Dict, List
 
+from PIL import Image, ImageDraw
 from django.conf import settings
-from moviepy import VideoFileClip, ImageClip, TextClip, CompositeVideoClip, ColorClip
+from moviepy import VideoFileClip, ImageClip, TextClip, CompositeVideoClip, ColorClip, ImageClip
+from moviepy.video import fx as vfx
+
+def create_rounded_mask(size, radius):
+    """Create a rounded rectangle mask using PIL."""
+    w, h = size
+    # Create high-res image for anti-aliasing
+    factor = 4
+    img = Image.new('L', (w * factor, h * factor), 0)
+    draw = ImageDraw.Draw(img)
+    draw.rounded_rectangle((0, 0, w * factor, h * factor), radius * factor, fill=255)
+    img = img.resize((w, h), Image.Resampling.LANCZOS)
+    return ImageClip(np.array(img) / 255.0).with_is_mask(True)
+
 
 class VideoEditorService:
     def __init__(self, output_path: str):
@@ -28,7 +43,7 @@ class VideoEditorService:
         clips = []
         subtitle_clips = []
 
-        for segment in segments:
+        for i, segment in enumerate(segments):
             print(f"DEBUG: Segment {segment.order} | {segment.start_time}-{segment.end_time}")
             start = max(0, segment.start_time)
             end = min(total_duration, segment.end_time)
@@ -39,21 +54,17 @@ class VideoEditorService:
 
             # --- A. Layer Logic (Primary & Secondary) ---
             print(f"DEBUG: Processing Clip Layout: {segment.layout_event}")
-
-            # --- A. Layer Logic (Primary & Secondary) ---
             
             # Secondary Asset (Top)
             asset_path = segment.asset_file.path if segment.asset_file else None
-            if asset_path and os.path.exists(asset_path):
-                # Check if video or image
+            asset_exists = asset_path and os.path.exists(asset_path)
+            
+            if asset_exists:
                 if asset_path.lower().endswith(('.mp4', '.mov', '.avi')):
                     secondary_clip = VideoFileClip(asset_path).subclipped(0, min(duration, 10)).resized(width=self.width)
                 else:
                     secondary_clip = ImageClip(asset_path).with_duration(duration)
-                    
-                    # PRD: Ken Burns Effect (Slow zoom 1.0x -> 1.1x)
                     if segment.animation_type == 'ken_burns':
-                        # v2 transformation
                         secondary_clip = secondary_clip.resized(lambda t: 1.0 + 0.1 * (t / duration))
             else:
                 secondary_clip = ColorClip(size=(self.width, 960), color=(20, 20, 20)).with_duration(duration)
@@ -69,22 +80,37 @@ class VideoEditorService:
                 seg_secondary = secondary_clip.resized(width=self.width).with_position('center')
                 clips.append(seg_secondary.with_start(start))
             
-            else: # Standard Split (50/50)
-                # Primary (Bottom) - Center Cropped to fit 1080x960
-                # We want the 'middle' of the source video, not the top ceiling.
-                # Assuming source is 9:16, we take the center 960px height.
+            else: # Standard Split (Card Style Aesthetic)
+                # Specs for "Floating Cards"
+                card_w, card_h, card_r = 1040, 920, 40
+                
+                # Primary (Bottom Card)
+                # 1. Resized to fit container width
+                seg_primary = primary_video.subclipped(start, end)
+                if seg_primary.w != self.width: 
+                    seg_primary = seg_primary.resized(width=self.width)
+                
+                # 2. Crop to Card Size
+                seg_primary = seg_primary.cropped(
+                    width=card_w, height=card_h, 
+                    x_center=self.width/2, y_center=seg_primary.h/2
+                ).with_position(('center', 980)) # Just below center line
+                
+                # 3. Apply Rounded Mask
+                seg_primary = seg_primary.with_mask(create_rounded_mask((card_w, card_h), card_r))
 
-                # Check source dimensions to avoid errors
-                src_h = primary_video.h
-                crop_y_center = src_h / 2
-
-                # Create the bottom clip
-                seg_primary = (primary_video.subclipped(start, end)
-                               .cropped(width=self.width, height=960, x_center=self.width/2, y_center=crop_y_center)
-                               .with_position(('center', 960)))
-
-                # Secondary (Top)
-                seg_secondary = secondary_clip.resized(width=self.width).with_position(('center', 0))
+                # Secondary (Top Card)
+                # 1. Resize
+                seg_secondary = secondary_clip.resized(width=self.width)
+                
+                # 2. Crop to Card Size
+                seg_secondary = seg_secondary.cropped(
+                    width=card_w, height=card_h, 
+                    x_center=self.width/2, y_center=seg_secondary.h/2
+                ).with_position(('center', 20)) # Just above center line
+                
+                # 3. Apply Rounded Mask
+                seg_secondary = seg_secondary.with_mask(create_rounded_mask((card_w, card_h), card_r))
                 
                 clips.append(seg_secondary.with_start(start))
                 clips.append(seg_primary.with_start(start))
@@ -95,7 +121,7 @@ class VideoEditorService:
                 
                 try:
                     # Typography Settings
-                    font_size = 42
+                    font_size = 36 # Reduced font size
                     box_width = 840
                     
                     # Shadow Text (Timbul)
@@ -113,7 +139,7 @@ class VideoEditorService:
                         text=text, 
                         font_size=font_size, 
                         color='white', 
-                        font='Helvetica-Bold', # Try a cleaner font if available, else default
+                        # font='Helvetica-Bold', 
                         method='caption', 
                         size=(box_width, None),
                         text_align='center'
@@ -124,38 +150,34 @@ class VideoEditorService:
                     print(f"Warning: TextClip failed: {e}")
 
         # 3. Dynamic Glass Box Overlay (Apple Glass)
-        # Replaced static box with a cleaner look
-        # Box should be centered at the split line or where text is?
-        # Text is at ('center', 960) -> Middle of screen (split line).
-        # We want the box to cover the text area. 
-        # Let's make a box of height 300px centered at 960.
+        # Specs: Rounded, 0.15 opacity, 1px border 0.3 opacity.
+        box_w, box_h = 900, 320 # Increased Height
+        radius = 30
         
-        box_h = 300
-        box_y = 960 - (box_h / 2)
-        
-        # Glass Background (White translucent)
-        glass_bg = ColorClip(size=(900, box_h), color=(255, 255, 255)) \
-            .with_opacity(0.15) \
-            .with_position(('center', 960 - (box_h/2))) \
-            .with_duration(total_duration)
-
-        # Top Border (Thin White Line)
-        border_top = ColorClip(size=(900, 2), color=(255, 255, 255)) \
-            .with_opacity(0.6) \
-            .with_position(('center', box_y)) \
-            .with_duration(total_duration)
+        def create_glass_panel(w, h, r):
+            # Create PIL image with white border and semi-transparent fill
+            factor = 4
+            img = Image.new('RGBA', (w*factor, h*factor), (0,0,0,0))
+            draw = ImageDraw.Draw(img)
             
-        # Bottom Border
-        border_bottom = ColorClip(size=(900, 2), color=(255, 255, 255)) \
-            .with_opacity(0.6) \
-            .with_position(('center', box_y + box_h)) \
+            # Fill (White 15%) -> (255, 255, 255, 38)
+            draw.rounded_rectangle((0, 0, w*factor, h*factor), r*factor, fill=(255,255,255,38))
+            
+            # Border (White 40%, 1px -> 4px at 4x) -> (255, 255, 255, 100)
+            draw.rounded_rectangle((0, 0, w*factor, h*factor), r*factor, outline=(255,255,255,100), width=4)
+            
+            img = img.resize((w, h), Image.Resampling.LANCZOS)
+            return img
+
+        glass_img = create_glass_panel(box_w, box_h, radius)
+        glass_box = ImageClip(np.array(glass_img)) \
+            .with_position(('center', 960 - (box_h/2))) \
             .with_duration(total_duration)
             
         # 4. Final Composition
-        # Order: Background -> Video/Images -> Glass Box -> Text
         final_video = CompositeVideoClip(
             [background] + clips + 
-            [glass_bg, border_top, border_bottom] + 
+            [glass_box] + 
             subtitle_clips
         )
 
