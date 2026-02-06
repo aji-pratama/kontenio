@@ -120,7 +120,13 @@ class VideoProcessingService:
 
         output_filename = f"final_{self.project.id}.mp4"
         output_path = self.paths['output'] / output_filename
-        props_path = Path(settings.PROJECT_ROOT) / 'public' / 'media' / 'render_props.json'
+        # Use the project-specific props file absolute path
+        props_path = self.project.props_file.path
+        
+        # Ensure the shared public path is also updated for local dev visibility
+        shared_props_path = Path(settings.PROJECT_ROOT) / 'public' / 'media' / 'render_props.json'
+        import shutil
+        shutil.copy2(props_path, str(shared_props_path))
 
         # Remove explicit frame range to let Remotion calculate it automatically via calculateMetadata
         cmd = [

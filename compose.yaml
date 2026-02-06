@@ -1,26 +1,70 @@
 services:
-  app:
+  db:
+    image: postgres:15-alpine
+    container_name: kontenio_db
+    environment:
+      - POSTGRES_DB=kontenio
+      - POSTGRES_USER=kontenio
+      - POSTGRES_PASSWORD=konteniosupersecret
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+
+  redis:
+    image: redis:7-alpine
+    container_name: kontenio_redis
+    ports:
+      - "6379:6379"
+
+  web:
     build: .
-    container_name: kontenio_dev
+    container_name: kontenio_web
     volumes:
       - .:/app
-      # Hindari menimpa node_modules container dengan yang lokal (beda OS)
       - /app/node_modules
-      # Cache pip
-      - pip_cache:/root/.cache/pip
     ports:
-      - "8001:8001" # Django Dev Server
-      - "9005:9005" # Media Server
-      - "3000:3000" # Remotion Studio
+      - "8001:8001"
+      - "9005:9005"
     environment:
       - DJANGO_SETTINGS_MODULE=core.settings
+      - DATABASE_URL=postgres://kontenio:konteniosupersecret@db:5432/kontenio
+      - REDIS_URL=redis://redis:6379/0
       - PYTHONUNBUFFERED=1
-      # Pastikan Remotion pake Chrome Linux yang kita install
+    depends_on:
+      - db
+      - redis
+    command: python3 backend/manage.py runserver 0.0.0.0:8001
+
+  worker:
+    build: .
+    container_name: kontenio_worker
+    volumes:
+      - .:/app
+      - /app/node_modules
+    environment:
+      - DJANGO_SETTINGS_MODULE=core.settings
+      - DATABASE_URL=postgres://kontenio:konteniosupersecret@db:5432/kontenio
+      - REDIS_URL=redis://redis:6379/0
+      - PYTHONUNBUFFERED=1
       - CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium
-      - PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
-      - CHROME_BIN=/usr/bin/chromium
-    command: >
-      bash -c "echo '🚀 Container Ready! Use `podman exec -it kontenio_dev /bin/bash` to enter.' && tail -f /dev/null"
+    depends_on:
+      - db
+      - redis
+    command: celery -A core worker -l info --concurrency=1
+
+  studio:
+    build: .
+    container_name: kontenio_studio
+    volumes:
+      - .:/app
+      - /app/node_modules
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=development
+    command: npx remotion studio --host 0.0.0.0
 
 volumes:
+  postgres_data:
   pip_cache:

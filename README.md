@@ -5,10 +5,11 @@
 ## 📋 Overview
 
 This project creates professional split-screen vertical videos by:
-1. **Transcribing** raw video audio using OpenAI Whisper
-2. **Analyzing** transcripts with GPT-4o to generate contextual visual prompts
-3. **Generating** AI images using DALL-E 3 or Stable Diffusion
+1. **Transcribing** raw video audio using OpenAI Whisper (API or Local)
+2. **Analyzing** transcripts with GPT-4o/Gemini to generate contextual visual prompts
+3. **Generating** AI images using DALL-E 3 or Imagen
 4. **Rendering** the final video with Remotion (React-based video framework)
+5. **Queueing**: All processing is handled in the background via Celery and Redis.
 
 ### Output Style
 - **Split-Screen Layout**: Dynamic visuals (top) + talking head (bottom)
@@ -18,85 +19,72 @@ This project creates professional split-screen vertical videos by:
 
 ---
 
-## 🚀 Quick Start
+## 🚀 Quick Start (Containerized)
+
+The easiest way to run Kontenio is using **Podman** (or Docker) through the centralized `Makefile`.
 
 ### Prerequisites
-- Node.js 18+ & npm
-- Python 3.10+
-- FFmpeg (for audio extraction)
-- OpenAI API key
+- [Podman](https://podman.io/) or Docker
+- [Podman Compose](https://github.com/containers/podman-compose) or Docker Compose
+- OpenAI / Gemini API keys
 
-### Installation
-
-```bash
-# Clone and enter directory
-cd kontenio
-
-# Install Node dependencies (Remotion)
-npm install
-
-# Create Python virtual environment
-cd backend
-python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
-
-# Install Python dependencies
-pip install django openai-whisper openai
-
-# Setup Django
-python manage.py migrate
-
-# Create symlink (required for Remotion to access media)
-cd ..
-ln -sfn $(pwd)/backend/media $(pwd)/public/media
-```
-
-### Configuration
+### Installation & Launch
 
 ```bash
-# Copy environment template
-cp .env.example .env
+# 1. Clone the project
+# 2. Setup environment variables
+cp .env.example .env  # Add your API keys here
 
-# Edit .env and add your OpenAI API key
-OPENAI_API_KEY=sk-your-key-here
+# 3. Start the entire stack (DB, Redis, Web, Worker, Studio)
+make up
+
+# 4. Run database migrations inside the container
+make migrate-db
 ```
+
+### Access Points
+- **Django Admin**: `http://localhost:8001/admin`
+- **Remotion Studio**: `http://localhost:3000`
+- **Media Server**: `http://localhost:9005` (Internal use for rendering)
 
 ---
 
 ## 🎯 Usage
 
-### Basic Command
+### Centralized Control (CLI)
+
+Use the `Makefile` commands to interact with the running containers:
 
 ```bash
-# Place your raw video in backend/media/raw/
+# Put your raw video in backend/media/raw/
 # Then run:
-cd backend
-python manage.py make_video --input="your_video.mp4"
+
+# Option A: Process in background (RECOMENDED)
+make c-video-async INPUT="your_video.mp4"
+
+# Option B: Process synchronously (wait for it)
+make c-video INPUT="your_video.mp4"
 ```
 
-### Command Options
-
-| Option | Description |
-|--------|-------------|
-| `--input` | **Required.** Filename in `media/raw/` directory |
-| `--mock` | Use mock data (no API calls, for testing) |
-| `--api` | Use OpenAI API for transcription (vs local Whisper) |
-| `--style` | Style hint for visuals (default: "modern, cinematic, vibrant") |
-| `--skip-images` | Skip image generation (use placeholder visuals) |
-| `--skip-render` | Skip final render (only generate props.json) |
-
-### Examples
-
+### Manual rendering (Host side)
+If you have the dependencies installed locally and want to render without containers:
 ```bash
-# Full production pipeline
-python manage.py make_video --input="my_content.mp4" --style="cyberpunk, neon"
-
-# Quick test with mock data
-python manage.py make_video --input="test.mp4" --mock
-
-# Generate metadata only (no render)
-python manage.py make_video --input="video.mp4" --skip-render
+make render-local
 ```
+
+---
+
+## 🛠️ Management Commands
+
+| Command | Description |
+| :--- | :--- |
+| `make up` | Start all services (background) |
+| `make down` | Stop and remove containers |
+| `make logs` | View live logs from all services |
+| `make status` | Check which containers are running |
+| `make restart` | Restart all services |
+| `make migrate-db` | Sync database schema |
+| `make shell` | Open a bash terminal inside the web container |
 
 ---
 
@@ -104,135 +92,43 @@ python manage.py make_video --input="video.mp4" --skip-render
 
 ```
 ./
-├── backend/                    # Django Backend
-│   ├── core/                   # Django Settings
-│   ├── video/                  # Main App
-│   │   ├── management/
-│   │   │   └── commands/
-│   │   │       └── make_video.py   # Pipeline Orchestrator
-│   │   ├── ai_services.py      # Whisper, GPT, Image Gen
-│   │   └── utils.py            # File utilities
-│   └── media/
-│       ├── raw/                # Input videos
-│       ├── assets/             # Generated images
-│       └── output/             # Final rendered videos
-├── src/                        # Remotion Frontend
-│   ├── compositions/
-│   │   └── SplitScreen.tsx     # Main video component
-│   └── Root.tsx                # Composition registry
-├── public/
-│   └── media/                  # Symlink → backend/media
-└── remotion.config.ts          # Remotion configuration
+├── backend/            # Django Application
+│   ├── core/           # Settings & Celery config
+│   ├── video/          # Logic, Models, & Tasks
+│   │   ├── tasks.py    # Celery background tasks
+│   │   ├── services.py # Pipeline Orchestrator
+│   └── media/          # Shared volumes for assets
+├── src/                # Remotion (React) Components
+├── compose.yaml        # Container orchestration
+├── Dockerfile          # Unified build environment
+└── Makefile            # Central control center
 ```
 
 ---
 
-## 🎨 Visual Style
+## 📦 Tech Stack
 
-### Video Specifications
-- **Format**: 1080x1920 (9:16 vertical)
-- **FPS**: 30
-- **Codec**: H.264 (CRF 18)
-
-### Layout
-- **Top 50%**: AI-generated contextual visuals with Ken Burns zoom
-- **Bottom 50%**: Original talking-head footage
-- **Center Overlay**: Glassmorphism transcript box
-
-### Glassmorphism Effect
-```css
-background: rgba(255, 255, 255, 0.15);
-backdrop-filter: blur(16px);
-border-radius: 30px;
-border: 1px solid rgba(255, 255, 255, 0.25);
-box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
-```
-
----
-
-## 🛠️ Development
-
-### Remotion Studio (Preview)
-
-```bash
-# Start Remotion Studio for live preview
-npm run dev
-```
-
-Access at `http://localhost:3000`
-
-### Render Video Manually
-
-```bash
-# Render with Remotion CLI
-npx remotion render SplitScreen output.mp4 --props=public/media/render_props.json
-```
-
-### Django Development
-
-```bash
-cd backend
-source venv/bin/activate
-python manage.py runserver  # If you need the Django admin
-```
-
----
-
-## 📦 Dependencies
-
-### Python
-- Django 5.x
-- openai-whisper (local transcription)
-- openai (API client for GPT-4 and DALL-E)
-
-### Node.js
-- Remotion 4.x
-- React 19
-- TypeScript 5.x
-
-### System
-- FFmpeg (audio extraction)
-- Node.js 18+
-- Python 3.10+
+- **Backend**: Django 5.x, Celery 5.x
+- **Broker/Cache**: Redis
+- **Database**: PostgreSQL 15
+- **Video Engine**: Remotion (React + Puppeteer)
+- **Container**: Podman/Docker
+- **AI**: OpenAI GPT-4o / Whisper, Google Gemini
 
 ---
 
 ## 🔧 Troubleshooting
 
-### "Whisper not installed"
-```bash
-pip install openai-whisper
-```
+### "podman-compose not found"
+Ensure you are in an environment where `podman-compose` is installed (e.g., `pip install podman-compose`).
 
-### "FFmpeg not found"
-```bash
-# macOS
-brew install ffmpeg
+### "ModuleNotFoundError: No module named 'celery'"
+This usually happens if you try to run `make dev` locally without installing the new dependencies. Use `make up` to run inside the container where everything is pre-installed.
 
-# Ubuntu
-sudo apt install ffmpeg
-```
-
-### "Remotion not found"
-```bash
-npm install
-```
-
-### Symlink issues
-```bash
-# Remove and recreate symlink
-rm -rf public/media
-ln -sfn $(pwd)/backend/media $(pwd)/public/media
-```
+### Rendering Timeouts
+The first render might take longer as it builds the Remotion bundle. Check `make logs` to see if there are any Chromium-related errors.
 
 ---
 
 ## 📄 License
-
 UNLICENSED - Private Project
-
----
-
-## 🤝 Contributing
-
-This is a private automation tool. For questions or improvements, contact the project maintainer.

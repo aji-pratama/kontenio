@@ -43,8 +43,9 @@ ENV READ_ONLY_FS=true
 # Fix for Chromium in Docker
 ENV CHROMIUM_FLAGS="--no-sandbox --disable-setuid-sandbox --disable-dev-shm-usage --disable-gpu"
 
-# 8. Create needed directories
-RUN mkdir -p backend/media/raw backend/media/output backend/media/props public/media
+# 8. Create needed directories (Safe mkdir)
+RUN mkdir -p backend/media/raw backend/media/output backend/media/props && \
+    if [ ! -L public/media ] && [ ! -d public/media ]; then mkdir -p public/media; fi
 
 # 9. Default Command (Keep container running)
 CMD ["tail", "-f", "/dev/null"]

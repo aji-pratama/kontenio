@@ -15,6 +15,7 @@ class Command(BaseCommand):
         parser.add_argument('--mock', action='store_true', help='Use mock providers for testing')
         parser.add_argument('--style', type=str, default='modern, cinematic', help='Style hint')
         parser.add_argument('--skip-render', action='store_true', help='Generate props only')
+        parser.add_argument('--async-task', action='store_true', help='Process in background via Celery')
 
     def handle(self, *args, **options):
         filename = options['input']
@@ -43,6 +44,12 @@ class Command(BaseCommand):
 
         self.stdout.write(f"   Mode: {'Mock' if use_mock else 'Production'}")
         
+        if options['async_task']:
+            from video.tasks import process_video_task
+            process_video_task.delay(project.id)
+            self.stdout.write(self.style.SUCCESS(f"\n✅ Task submitted to Celery! Project ID: {project.id}"))
+            return
+
         service = VideoProcessingService(project)
         
         if options['skip_render']:
