@@ -1,0 +1,26 @@
+services:
+  app:
+    build: .
+    container_name: kontenio_dev
+    volumes:
+      - .:/app
+      # Hindari menimpa node_modules container dengan yang lokal (beda OS)
+      - /app/node_modules
+      # Cache pip
+      - pip_cache:/root/.cache/pip
+    ports:
+      - "8001:8001" # Django Dev Server
+      - "9005:9005" # Media Server
+      - "3000:3000" # Remotion Studio
+    environment:
+      - DJANGO_SETTINGS_MODULE=core.settings
+      - PYTHONUNBUFFERED=1
+      # Pastikan Remotion pake Chrome Linux yang kita install
+      - CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium
+      - PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
+      - CHROME_BIN=/usr/bin/chromium
+    command: >
+      bash -c "echo '🚀 Container Ready! Use `podman exec -it kontenio_dev /bin/bash` to enter.' && tail -f /dev/null"
+
+volumes:
+  pip_cache:

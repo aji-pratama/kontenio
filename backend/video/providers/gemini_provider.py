@@ -74,14 +74,28 @@ class GeminiTranscriptionProvider(TranscriptionProvider):
             if text.startswith('```'):
                 text = text.split('\n', 1)[1].rsplit('```', 1)[0]
             segments_data = json.loads(text)
-            return [
-                TranscriptSegment(
-                    start=float(seg.get('start', 0)),
-                    end=float(seg.get('end', 0)),
-                    text=seg.get('text', '').strip()
-                )
-                for seg in segments_data
-            ]
+            
+            # Robust list extraction
+            final_segments = []
+            if isinstance(segments_data, list):
+                items = segments_data
+            elif isinstance(segments_data, dict):
+                items = []
+                for key in ['segments', 'transcript', 'data']:
+                    if key in segments_data and isinstance(segments_data[key], list):
+                        items = segments_data[key]
+                        break
+            else:
+                items = []
+
+            for seg in items:
+                if isinstance(seg, dict):
+                    final_segments.append(TranscriptSegment(
+                        start=float(seg.get('start', 0)),
+                        end=float(seg.get('end', 0)),
+                        text=str(seg.get('text', '')).strip()
+                    ))
+            return final_segments
         except (json.JSONDecodeError, Exception):
             return [TranscriptSegment(start=0, end=10, text=response.text)]
 
@@ -141,21 +155,28 @@ class GeminiLLMProvider(LLMProvider):
             if text.startswith('```'):
                 text = text.split('\n', 1)[1].rsplit('```', 1)[0]
             result = json.loads(text)
-            prompts_list = result
-            if isinstance(result, dict):
-                for key in ['prompts', 'visuals', 'images']:
+            
+            prompts_list = []
+            if isinstance(result, list):
+                prompts_list = result
+            elif isinstance(result, dict):
+                for key in ['prompts', 'visuals', 'images', 'data']:
                     if key in result and isinstance(result[key], list):
                         prompts_list = result[key]
                         break
-            return [
-                VisualPrompt(
-                    time=float(p.get('time', 0)),
-                    prompt=p.get('prompt', ''),
-                    duration=p.get('duration')
-                )
-                for p in prompts_list
-            ]
-        except (json.JSONDecodeError, KeyError):
+                if not prompts_list and 'time' in result:
+                    prompts_list = [result]
+            
+            final_prompts = []
+            for p in prompts_list:
+                if isinstance(p, dict):
+                    final_prompts.append(VisualPrompt(
+                        time=float(p.get('time', 0)),
+                        prompt=str(p.get('prompt', '')),
+                        duration=p.get('duration')
+                    ))
+            return final_prompts
+        except (json.JSONDecodeError, KeyError, Exception):
             return []
 
 

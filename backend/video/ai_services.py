@@ -47,6 +47,11 @@ class TranscriptionService:
         return str(output_path)
 
     def transcribe(self, video_path: str, use_api: bool = True) -> List[Dict[str, Any]]:
+        if self.provider_type == 'mock':
+            provider = self._get_provider()
+            segments = provider.transcribe(video_path)
+            return [seg.to_dict() for seg in segments]
+
         audio_path = self.extract_audio(video_path)
         try:
             if not use_api and self.provider_type == "openai_whisper":
@@ -105,11 +110,11 @@ class ImageGenerationService:
         provider = self._get_provider()
         prompt_objects = [
             VisualPrompt(
-                time=p.get('time', 0),
-                prompt=p.get('prompt', ''),
-                duration=p.get('duration')
+                time=p.get('time', 0) if isinstance(p, dict) else 0,
+                prompt=p.get('prompt', '') if isinstance(p, dict) else str(p),
+                duration=p.get('duration') if isinstance(p, dict) else None
             )
-            for p in prompts
+            for p in prompts if p # Skip nulls
         ]
         results = provider.generate_batch(prompt_objects, output_dir, progress_callback)
         return [r.to_visual_dict() for r in results]

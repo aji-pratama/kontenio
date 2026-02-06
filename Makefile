@@ -5,7 +5,7 @@
 
 # Default shell
 SHELL := /bin/bash
-PYTHON := python
+PYTHON := python3
 DJANGO := cd backend && $(PYTHON) manage.py
 
 # --- Core Commands ---
@@ -32,17 +32,31 @@ dev: ## Run Django Admin AND Remotion Studio concurrently
 
 # --- Video Operations ---
 
-video: ## Process video (Usage: make video INPUT=path/to/video.mp4)
-	@if [ -z "$(INPUT)" ]; then echo "❌ Error: INPUT is required. Example: make video INPUT=my_video.mp4"; exit 1; fi
+video: ## Process video (Usage: make video INPUT=my_video.mp4)
+	@if [ -z "$(INPUT)" ]; then echo "❌ Error: INPUT is required."; exit 1; fi
 	$(DJANGO) make_video --input="$(INPUT)"
 
-render: ## Render video using latest generated props
-	npx remotion render SplitScreen out/video.mp4 --props=public/media/render_props.json
+mock: ## Process video with Mock Providers (Usage: make mock INPUT=my_video.mp4)
+	@if [ -z "$(INPUT)" ]; then echo "❌ Error: INPUT is required."; exit 1; fi
+	$(DJANGO) make_video --input="$(INPUT)" --mock
 
-# --- Utilities ---
+test: ## Run backend unit tests
+	$(DJANGO) test video.tests
+
+test-render: ## Test render using video_test_fixed.mp4
+	@echo "🎥 Testing Render with video_test_fixed.mp4..."
+	$(DJANGO) make_video --input="video_test_fixed.mp4" --mock
+
+render: ## Render video using latest generated props
+	@export CHROMIUM_FLAGS="--disable-web-security --no-sandbox" && \
+	npx remotion render SplitScreen backend/media/output/final_cli.mp4 \
+	--props=public/media/render_props.json \
+	--concurrency=1 \
+	--gl=swiftshader
 
 clean: ## Remove temporary files and caches
 	find . -type d -name "__pycache__" -exec rm -rf {} +
 	find . -type f -name "*.pyc" -delete
 	rm -rf out/*
+	rm -f .server.pid
 	@echo "✨ Cleaned up!"

@@ -23,7 +23,16 @@ export const RemotionRoot: React.FC = () => {
       <Composition
         id="SplitScreen"
         component={SplitScreen}
-        durationInFrames={300}
+        durationInFrames={300} // Default duration, will be overridden by calculateMetadata
+        calculateMetadata={async ({ props }) => {
+          if (props.transcript && props.transcript.length > 0) {
+            const lastSeg = props.transcript[props.transcript.length - 1];
+            return {
+              durationInFrames: Math.ceil((lastSeg.end + 2) * 30),
+            };
+          }
+          return { durationInFrames: 300 };
+        }}
         fps={30}
         width={1080}
         height={1920}

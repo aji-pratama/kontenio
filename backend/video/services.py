@@ -1,4 +1,4 @@
-import subprocess
+import subprocess, os
 from pathlib import Path
 
 from django.conf import settings
@@ -36,7 +36,7 @@ class VideoProcessingService:
 
         service = TranscriptionService(provider=provider)
         self.project.transcript_data = service.transcribe(self.project.raw_video.path)
-        self.project.save(update_fields=['transcript_data', 'updated_at'])
+        self.project.save()
 
     def _generate_visual_prompts(self):
         provider = self.project.llm_provider
@@ -48,12 +48,12 @@ class VideoProcessingService:
             self.project.transcript_data,
             style_hint=self.project.style_hint
         )
-        self.project.save(update_fields=['visual_prompts_data', 'updated_at'])
+        self.project.save()
 
     def _generate_images(self):
         if self.project.skip_image_generation:
             self.project.visuals_data = []
-            self.project.save(update_fields=['visuals_data'])
+            self.project.save()
             return
 
         provider = self.project.image_provider
@@ -72,19 +72,24 @@ class VideoProcessingService:
         )
 
         # Create assets in DB
-        for i, prompt_obj in enumerate(self.project.visual_prompts_data or []):
+        prompts_data = self.project.visual_prompts_data or []
+        for i, prompt_obj in enumerate(prompts_data):
+            # Safety check: ensure prompt_obj is a dictionary
+            if not isinstance(prompt_obj, dict):
+                continue
+                
             if i < len(visuals):
                 filename = visuals[i]['src'].split('/')[-1]
                 VisualAsset.objects.create(
                     project=self.project,
-                    start_time=prompt_obj['time'],
+                    start_time=prompt_obj.get('time', 0),
                     image=f"assets/{filename}",
                     prompt=prompt_obj.get('prompt', ''),
                     is_generated=(provider != 'mock')
                 )
 
         self.project.visuals_data = visuals
-        self.project.save(update_fields=['visuals_data', 'updated_at'])
+        self.project.save()
 
     def _generate_props(self):
         self.project.update_status('rendering', 'Preparing render...')
@@ -105,31 +110,57 @@ class VideoProcessingService:
         generate_render_props(**props_args, output_path=str(public_props_path))
 
         self.project.props_file = f"props/{props_filename}"
-        self.project.save(update_fields=['props_file', 'updated_at'])
+        self.project.save()
 
     def _render(self):
         self.project.update_status('rendering', 'Rendering video...')
 
-        try:
-            metadata = get_video_metadata(self.project.raw_video.path)
-            duration_frames = int(metadata['duration'] * 30)
-        except Exception:
-            duration_frames = 300
+        metadata = get_video_metadata(self.project.raw_video.path)
+        duration_frames = int(metadata.get('duration', 10) * 30)
 
         output_filename = f"final_{self.project.id}.mp4"
         output_path = self.paths['output'] / output_filename
         props_path = Path(settings.PROJECT_ROOT) / 'public' / 'media' / 'render_props.json'
 
+        # Remove explicit frame range to let Remotion calculate it automatically via calculateMetadata
         cmd = [
             "npx", "remotion", "render", "SplitScreen",
-            str(output_path), f"--props={props_path}", f"--frames=0-{duration_frames}"
+            str(output_path), f"--props={props_path}",
+            "--concurrency=1", 
+            "--gl=swiftshader", # Force SwiftShader for stable headless rendering on Mac/Linux
+            "--log=verbose",
+            "--timeout=120000"
         ]
 
-        subprocess.run(cmd, cwd=str(settings.PROJECT_ROOT), capture_output=True, text=True, check=True, timeout=600)
-        
-        self.project.output_video = f"output/{output_filename}"
-        self.project.update_status('completed', 'Done!')
-        self.project.save(update_fields=['output_video', 'updated_at'])
+        # 1. Start dedicated static server for MEDIA_ROOT on port 9005
+        # This is the secret sauce for stable local rendering
+        media_root = Path(settings.MEDIA_ROOT)
+        print("🚀 Starting Dedicated Media Server on :9005...")
+        media_server = subprocess.Popen(
+            ["python3", "-m", "http.server", "9005", "--directory", str(media_root)],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL
+        )
+
+        try:
+            print(f"\n🎥 EXECUTING CMD: {' '.join(cmd)}")
+            
+            # Inject CHROMIUM_FLAGS (just in case, but http:// bypasses file:// blocks anyway)
+            env = os.environ.copy()
+            env["CHROMIUM_FLAGS"] = "--disable-web-security --no-sandbox"
+            
+            # Stream output directly to console
+            subprocess.run(cmd, cwd=str(settings.PROJECT_ROOT), check=True, timeout=1200, env=env)
+            
+            self.project.output_video = f"output/{output_filename}"
+            self.project.update_status('completed', 'Rendered successfully!')
+            self.project.save()
+            
+        finally:
+            # ALWAYS kill the server
+            print("🛑 Stopping Media Server...")
+            media_server.terminate()
+            media_server.wait()
 
     def generate_props_only(self):
         try:

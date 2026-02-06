@@ -92,23 +92,33 @@ class OpenAILLMProvider(LLMProvider):
         )
 
         try:
-            result = json.loads(response.choices[0].message.content)
-            prompts_list = result
-            if isinstance(result, dict):
-                for key in ['prompts', 'visuals', 'images']:
-                    if key in result and isinstance(result[key], list):
-                        prompts_list = result[key]
+            raw_content = response.choices[0].message.content
+            data = json.loads(raw_content)
+            
+            # Robust extraction of the list
+            prompts_list = []
+            if isinstance(data, list):
+                prompts_list = data
+            elif isinstance(data, dict):
+                # Look for common keys if AI wrapped it
+                for key in ['prompts', 'visuals', 'images', 'data']:
+                    if key in data and isinstance(data[key], list):
+                        prompts_list = data[key]
                         break
-
-            return [
-                VisualPrompt(
-                    time=p.get('time', 0),
-                    prompt=p.get('prompt', ''),
-                    duration=p.get('duration')
-                )
-                for p in prompts_list
-            ]
-        except (json.JSONDecodeError, KeyError):
+                # If it's just one object, wrap it in a list
+                if not prompts_list and 'time' in data:
+                    prompts_list = [data]
+            
+            final_prompts = []
+            for p in prompts_list:
+                if isinstance(p, dict):
+                    final_prompts.append(VisualPrompt(
+                        time=float(p.get('time', 0)),
+                        prompt=str(p.get('prompt', '')),
+                        duration=p.get('duration')
+                    ))
+            return final_prompts
+        except Exception:
             return []
 
 

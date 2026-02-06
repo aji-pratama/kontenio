@@ -1,5 +1,6 @@
 from django.contrib import admin, messages
 from django.utils.html import format_html
+from django.utils.safestring import mark_safe
 
 from .models import VideoProject, VisualAsset
 from .services import VideoProcessingService
@@ -27,7 +28,7 @@ class VideoProjectAdmin(admin.ModelAdmin):
     list_filter = ['status', 'created_at', 'transcription_provider', 'llm_provider', 'image_provider']
     search_fields = ['title', 'description']
     readonly_fields = [
-        'status', 'progress_message', 'error_message',
+        'progress_message', 'error_message',
         'transcript_data', 'visual_prompts_data', 'visuals_data',
         'output_video', 'props_file',
         'created_at', 'updated_at', 'completed_at',
@@ -101,15 +102,26 @@ class VideoProjectAdmin(admin.ModelAdmin):
                 obj.output_video.url
             )
         if obj.status == 'failed':
-            return format_html('<span style="color:#dc3545; font-size:11px;">❌ Failed</span>')
+            error_preview = (obj.error_message[:50] + '...') if obj.error_message else 'Unknown error'
+            return format_html(
+                '<span style="color:#dc3545; font-size:11px;" title="{}"">❌ {}</span>',
+                obj.error_message or 'Unknown error',
+                error_preview
+            )
+        if obj.status == 'completed' and obj.error_message:
+            # Completed but with errors (partial success)
+            return format_html(
+                '<span style="color:#ffc107; font-size:11px;" title="{}">⚠️ Partial</span>',
+                obj.error_message[:200]
+            )
         if obj.status == 'pending':
-            return format_html('<span style="color:#666; font-size:11px;">Ready</span>')
-        return format_html('<span style="color:#17a2b8; font-size:11px;">⏳ Processing</span>')
+            return mark_safe('<span style="color:#666; font-size:11px;">Ready</span>')
+        return mark_safe('<span style="color:#17a2b8; font-size:11px;">⏳ Processing</span>')
     actions_column.short_description = 'Actions'
 
     @admin.action(description='🚀 Process (Production)')
     def process_videos(self, request, queryset):
-        for project in queryset.filter(status='pending'):
+        for project in queryset.filter(status__in=['pending', 'failed']):
             service = VideoProcessingService(project)
             if service.process():
                 messages.success(request, f'✅ {project.title} done!')
@@ -118,11 +130,12 @@ class VideoProjectAdmin(admin.ModelAdmin):
 
     @admin.action(description='🧪 Process (Mock)')
     def process_videos_mock(self, request, queryset):
-        for project in queryset.filter(status='pending'):
-            # Force mock providers temporarily
+        for project in queryset.filter(status__in=['pending', 'failed']):
+            # Force mock providers and SAVE to DB
             project.transcription_provider = 'mock'
             project.llm_provider = 'mock'
             project.image_provider = 'mock'
+            project.save() 
             
             service = VideoProcessingService(project)
             if service.process():

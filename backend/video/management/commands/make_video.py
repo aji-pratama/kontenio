@@ -28,7 +28,6 @@ class Command(BaseCommand):
         if not raw_path.exists():
             raise CommandError(f"File not found: {raw_path}")
 
-        # Create a temporary/adhoc project for this command
         project = VideoProject(
             title=f"CLI: {filename}",
             raw_video=f"raw/{filename}",
@@ -39,6 +38,8 @@ class Command(BaseCommand):
             project.transcription_provider = 'mock'
             project.llm_provider = 'mock'
             project.image_provider = 'mock'
+        
+        project.save()  # Ensure project has an ID before processing
 
         self.stdout.write(f"   Mode: {'Mock' if use_mock else 'Production'}")
         

@@ -108,12 +108,12 @@ class VideoProject(models.Model):
         self.progress_message = message
         if status == 'completed':
             self.completed_at = timezone.now()
-        self.save(update_fields=['status', 'progress_message', 'completed_at', 'updated_at'])
+        self.save()
 
     def set_error(self, error_message):
         self.status = 'failed'
         self.error_message = error_message
-        self.save(update_fields=['status', 'error_message', 'updated_at'])
+        self.save()
 
 
 class VisualAsset(models.Model):
