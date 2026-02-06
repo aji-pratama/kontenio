@@ -70,18 +70,6 @@ services:
       - redis
     command: celery -A core beat -l info
 
-  flower:
-    build: .
-    container_name: kontenio_flower
-    ports:
-      - "5555:5555"
-    environment:
-      - REDIS_URL=redis://redis:6379/0
-      - PYTHONPATH=/app/backend
-    depends_on:
-      - redis
-    command: celery -A core flower --port=5555
-
   studio:
     build: .
     container_name: kontenio_studio
