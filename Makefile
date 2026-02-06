@@ -59,12 +59,16 @@ shell: ## Enter the web container shell
 
 # --- Video Operations (Run inside container) ---
 
-c-video: ## Process video (Usage: make c-video INPUT=clip.mp4)
+c-video: ## Process video (Usage: make c-video INPUT=clip.mp4 MOCK=true)
 	@if [ -z "$(INPUT)" ]; then echo "❌ Error: INPUT is required."; exit 1; fi
-	podman exec -it $(WEB_CONTAINER) python3 backend/manage.py make_video --input="$(INPUT)"
+	$(eval MOCK_FLAG := $(if $(filter true,$(MOCK)),--mock,))
+	podman exec -it $(WEB_CONTAINER) python3 backend/manage.py make_video --input="$(INPUT)" $(MOCK_FLAG)
 
 render-video: ## Alias for c-video (Usage: make render-video INPUT=clip.mp4)
 	@$(MAKE) c-video INPUT="$(INPUT)"
+
+render-test: ## Render the default test video (mock)
+	@$(MAKE) c-video INPUT="IMG_1342.mov" MOCK=true
 
 c-video-async: ## Process via Celery (Usage: make c-video-async INPUT=clip.mp4 MOCK=true)
 	@if [ -z "$(INPUT)" ]; then echo "❌ Error: INPUT is required."; exit 1; fi
