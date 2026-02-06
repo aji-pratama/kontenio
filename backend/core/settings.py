@@ -122,9 +122,17 @@ STATIC_URL = 'static/'
 MEDIA_URL = '/media/'
 MEDIA_ROOT = BASE_DIR / 'media'
 
-# OpenAI API Configuration (for Whisper and GPT-4)
+# API Keys
 import os
 OPENAI_API_KEY = os.environ.get('OPENAI_API_KEY', '')
+GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY', '') or os.environ.get('GOOGLE_API_KEY', '')
+
+# Default Providers
+DEFAULT_TRANSCRIPTION_PROVIDER = os.environ.get('DEFAULT_TRANSCRIPTION_PROVIDER', 'openai_whisper')
+DEFAULT_LLM_PROVIDER = os.environ.get('DEFAULT_LLM_PROVIDER', 'openai_gpt4')
+DEFAULT_IMAGE_PROVIDER = os.environ.get('DEFAULT_IMAGE_PROVIDER', 'dalle3')
+DEFAULT_STYLE_HINT = os.environ.get('DEFAULT_STYLE_HINT', 'modern')
 
 # Project root (parent of backend/)
 PROJECT_ROOT = BASE_DIR.parent
+

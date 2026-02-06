@@ -4,6 +4,9 @@ Django>=5.0,<7.0
 # OpenAI SDK (for GPT-4, Whisper API, DALL-E)
 openai>=1.0.0
 
+# Google Gemini SDK (new official SDK)
+google-genai>=1.0.0
+
 # Image handling
 Pillow>=10.0.0
 
