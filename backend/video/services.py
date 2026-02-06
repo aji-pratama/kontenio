@@ -132,11 +132,11 @@ class VideoProcessingService:
         except:
             pass
 
-        # Remove explicit frame range to let Remotion calculate it automatically via calculateMetadata
+        # Use more concurrency for faster rendering if resources allow
         cmd = [
             "npx", "remotion", "render", "SplitScreen",
             str(output_path), f"--props={props_path}",
-            "--concurrency=1", 
+            "--concurrency=4", 
             "--gl=swiftshader", # CPU based rendering, most compatible in Docker
             "--log=verbose",
             "--timeout=600000"
