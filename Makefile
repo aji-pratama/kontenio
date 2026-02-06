@@ -61,9 +61,10 @@ c-video: ## Process video (Usage: make c-video INPUT=clip.mp4)
 	@if [ -z "$(INPUT)" ]; then echo "❌ Error: INPUT is required."; exit 1; fi
 	podman exec -it $(WEB_CONTAINER) python3 backend/manage.py make_video --input="$(INPUT)"
 
-c-video-async: ## Process via Celery (Usage: make c-video-async INPUT=clip.mp4)
+c-video-async: ## Process via Celery (Usage: make c-video-async INPUT=clip.mp4 MOCK=true)
 	@if [ -z "$(INPUT)" ]; then echo "❌ Error: INPUT is required."; exit 1; fi
-	podman exec -it $(WEB_CONTAINER) python3 backend/manage.py make_video --input="$(INPUT)" --async-task
+	$(eval MOCK_FLAG := $(if $(filter true,$(MOCK)),--mock,))
+	podman exec -it $(WEB_CONTAINER) python3 backend/manage.py make_video --input="$(INPUT)" --async-task $(MOCK_FLAG)
 
 c-test: ## Run backend tests inside container
 	podman exec -it $(WEB_CONTAINER) python3 backend/manage.py test video.tests

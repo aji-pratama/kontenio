@@ -131,9 +131,9 @@ class VideoProcessingService:
             "npx", "remotion", "render", "SplitScreen",
             str(output_path), f"--props={props_path}",
             "--concurrency=1", 
-            "--gl=swiftshader", # Force SwiftShader for stable headless rendering on Mac/Linux
+            "--gl=angle", 
             "--log=verbose",
-            "--timeout=120000"
+            "--timeout=600000"
         ]
 
         # 1. Start dedicated static server for MEDIA_ROOT on port 9005
